@@ -51,12 +51,9 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
         if 'entries' in data:
-            # take the first item from a playlist
+            # take first item from a playlist
             data = data['entries'][0]
-
-        # Use a fixed filename to overwrite existing files (without specifying a folder)
-        filename = "your_fixed_filename.mp3"
-
+        filename = data['title'] if stream else ytdl.prepare_filename(data)
         return filename
 
 
@@ -86,9 +83,14 @@ async def play(ctx, url):
         # Disconnect after the audio is done playing
         await voice_channel.disconnect()
         await ctx.send(f'**Finished playing:** {filename}')
+
+        # Delete the file after playing
+        os.remove(filename)
+
     except Exception as e:
         print(f"Error: {e}")
         await ctx.send(f"Error: Unable to play the song. Please try again later.")
+
 
 
 
