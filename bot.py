@@ -1,18 +1,19 @@
-#WaLLE
 import discord
 from discord.ext import commands,tasks
 import os
 from dotenv import load_dotenv
-import youtube_dl
+import yt_dlp as youtube_dl
+import asyncio
+
+
 
 
 load_dotenv()
-# Get the API token from the .env file.
 DISCORD_TOKEN = os.getenv("discord_token")
 
 intents = discord.Intents().all()
 client = discord.Client(intents=intents)
-bot = commands.Bot(command_prefix='!',intents=intents)
+bot = commands.Bot(command_prefix='?',intents=intents)
 
 
 youtube_dl.utils.bug_reports_message = lambda: ''
@@ -27,7 +28,9 @@ ytdl_format_options = {
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
-    'source_address': '0.0.0.0' # bind to ipv4 since ipv6 addresses cause issues sometimes
+    'source_address': '0.0.0.0', # bind to ipv4 since ipv6 addresses cause issues sometimes
+    'extractor': 'youtube',
+
 }
 
 ffmpeg_options = {
@@ -48,55 +51,83 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
         if 'entries' in data:
-            # take first item from a playlist
+            # take the first item from a playlist
             data = data['entries'][0]
-        filename = data['title'] if stream else ytdl.prepare_filename(data)
+
+        # Use a fixed filename to overwrite existing files (without specifying a folder)
+        filename = "your_fixed_filename.mp3"
+
         return filename
 
 
-@bot.command(name='play_song', help='To play song')
-async def play(ctx,url):
-    
-    if not ctx.message.author.name=="Rohan Krishna" :
-         await ctx.send('NOT AUTHORISED!')
-         return
-    try :
-        server = ctx.message.guild
-        voice_channel = server.voice_client
+@bot.command(name='play', help='To play song')
+async def play(ctx, url):
+    try:
+        author_voice = ctx.author.voice
+        if not author_voice or not author_voice.channel:
+            await ctx.send("You are not connected to a voice channel.")
+            return
+
+        channel = author_voice.channel
+        voice_channel = ctx.voice_client or await channel.connect()
+
+        if voice_channel.is_playing():
+            await ctx.send("The bot is already playing audio.")
+            return
 
         async with ctx.typing():
             filename = await YTDLSource.from_url(url, loop=bot.loop)
-            voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename))
-        await ctx.send('**Now playing:** {}'.format(filename))
-    except:
-        await ctx.send("The bot is not connected to a voice channel.")
+            voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg", source=filename))
+
+            # Wait for the audio to finish playing
+            while voice_channel.is_playing() or voice_channel.is_paused():
+                await asyncio.sleep(1)
+
+        # Disconnect after the audio is done playing
+        await voice_channel.disconnect()
+        await ctx.send(f'**Finished playing:** {filename}')
+    except Exception as e:
+        print(f"Error: {e}")
+        await ctx.send(f"Error: Unable to play the song. Please try again later.")
+
+
+
+
+
 
 
 @bot.command(name='join', help='Tells the bot to join the voice channel')
 async def join(ctx):
-    if not ctx.message.author.voice:
-        await ctx.send("{} is not connected to a voice channel".format(ctx.message.author.name))
-        return
-    else:
+    if not ctx.voice_client:
+        if not ctx.message.author.voice:
+            await ctx.send("{} is not connected to a voice channel".format(ctx.message.author.name))
+            return
         channel = ctx.message.author.voice.channel
-    await channel.connect()
+        await channel.connect()
+    else:
+        await ctx.send("I'm already in a voice channel.")
 
 
 @bot.command(name='pause', help='This command pauses the song')
 async def pause(ctx):
     voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
-        await voice_client.pause()
+
+    if voice_client and voice_client.is_playing():
+        voice_client.pause()
+        await ctx.send("The song has been paused.")
     else:
         await ctx.send("The bot is not playing anything at the moment.")
-    
+
 @bot.command(name='resume', help='Resumes the song')
 async def resume(ctx):
     voice_client = ctx.message.guild.voice_client
-    if voice_client.is_paused():
-        await voice_client.resume()
+
+    if voice_client and voice_client.is_paused():
+        voice_client.resume()
+        await ctx.send("The song has been resumed.")
     else:
-        await ctx.send("The bot was not playing anything before this. Use play_song command")
+        await ctx.send("The bot was not playing anything before this. Use the play command.")
+
     
 
 
@@ -111,11 +142,12 @@ async def leave(ctx):
 @bot.command(name='stop', help='Stops the song')
 async def stop(ctx):
     voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
-        await voice_client.stop()
+
+    if voice_client and voice_client.is_playing():
+        voice_client.stop()
+        await ctx.send("The song has been stopped.")
     else:
         await ctx.send("The bot is not playing anything at the moment.")
-
 
 @bot.event
 async def on_ready():
@@ -125,6 +157,8 @@ async def on_ready():
             if str(channel) == "general" :
                 await channel.send('Bot Activated..')
                 await channel.send(file=discord.File('giphy.png'))
+                print('successfully')
+                
         print('Active in {}\n Member Count : {}'.format(guild.name,guild.member_count))
 
 @bot.command(help = "Prints details of Author")
@@ -173,17 +207,20 @@ async def on_member_join(member):
 
 @bot.command()
 async def tell_me_about_yourself(ctx):
-    text = "My name is WallE!\n I was built by Kakarot2000. At present I have limited features(find out more by typing !help)\n :)"
+    text = "My name is Nerfe Bot!\n I was built by Nerfe Guno. At present I have limited features(find out more by typing !help)\n :)"
     await ctx.send(text)
 
 @bot.event
-async def on_message(message) :
-    # bot.process_commands(msg) is a couroutine that must be called here since we are overriding the on_message event
-    await bot.process_commands(message) 
+async def on_message(message):
+    await bot.process_commands(message)
+    
+    if message.author == bot.user:
+        return  # Ignore messages from the bot itself
+
     if str(message.content).lower() == "hello":
         await message.channel.send('Hi!')
-    
-    if str(message.content).lower() in ['swear_word1','swear_word2']:
+
+    if str(message.content).lower() in ['swear_word1', 'swear_word2']:
         await message.channel.purge(limit=1)
 
 

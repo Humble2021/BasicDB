@@ -1,5 +1,22 @@
-# Discord-Bot
+#Commands Steps
+
+python -m venv gwapo
+
+#Activate Environment
+
+On windows
+
+venv\Scripts\activate
+
+On Linux
+
+source venv/bin/activate
 
 
+python bot.py
 
-Link to Article: [Build a Discord Bot in Python That Plays Music and Send GIFs](https://link.medium.com/n09oE48Kkgb)
+
+PS: If your Os is Windows , It may encounter some errors/bugs if possible
+
+
+Btw I'm using Arch
