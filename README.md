@@ -6,11 +6,11 @@ python -m venv gwapo
 
 On windows
 
-venv\Scripts\activate
+gwapo\Scripts\activate
 
 On Linux
 
-source venv/bin/activate
+source gwapo/bin/activate
 
 
 python bot.py
